@@ -116,6 +116,46 @@ public:
     }
 };
 
+struct GuildHouseLocaleText
+{
+    std::string intro;
+    std::string tp;
+    std::string buy;
+    std::string sell;
+    std::string close;
+};
+
+static GuildHouseLocaleText GetGuildHouseText(LocaleConstant locale)
+{
+    switch (locale)
+    {
+    case LOCALE_frFR:
+        return {
+            "Bienvenue, noble représentant de guilde !\n\n"
+            "Les Maison de Guilde sont des sanctuaires exclusifs offerts aux guildes les plus déterminées. "
+            "Personnalisables et modulables, elles peuvent accueillir des portails, vendeurs, maîtres de classe, "
+            "et tout ce dont une guilde a besoin pour prospérer.\n\n"
+            "Explorez vos options ci-dessous pour en acquérir une ou gérer celle que vous possédez déjà.",
+            "🏠 Se téléporter à la Maison de Guilde",
+            "🛒 Acheter une Maison de Guilde",
+            "💰 Vendre la Maison de Guilde",
+            "❌ Fermer"
+        };
+    default:
+        return {
+            "Welcome, noble guild representative!\n\n"
+            "Guild Houses are exclusive sanctuaries for the most ambitious guilds. "
+            "Fully customizable, they can host portals, vendors, trainers, and everything your guild needs to thrive.\n\n"
+            "Explore your options below to acquire one or manage your existing Guild House.",
+            "🏠 Teleport to Guild House",
+            "🛒 Buy Guild House",
+            "💰 Sell Guild House",
+            "❌ Close"
+        };
+    }
+}
+
+
 class GuildHouseSeller : public CreatureScript
 {
 
@@ -137,43 +177,46 @@ public:
         return new GuildHouseSellerAI(creature);
     }
 
-    bool OnGossipHello(Player* player, Creature* creature) override
+bool OnGossipHello(Player* player, Creature* creature) override
+{
+    if (!player->GetGuild())
     {
-        if (!player->GetGuild())
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("You are not a member of a guild.");
-            CloseGossipMenuFor(player);
-            return false;
-        }
-
-        QueryResult has_gh = CharacterDatabase.Query("SELECT id, `guild` FROM `guild_house` WHERE guild = {}", player->GetGuildId());
-
-        // Only show Teleport option if guild owns a guild house
-        if (has_gh)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Teleport to Guild House", GOSSIP_SENDER_MAIN, 1);
-
-            // Only show "Sell" option if they have a guild house & have permission to sell it
-            Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId());
-            Guild::Member const* memberMe = guild->GetMember(player->GetGUID());
-            if (memberMe->IsRankNotLower(sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0)))
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Sell Guild House!", GOSSIP_SENDER_MAIN, 3, "Are you sure you want to sell your Guild House?", 0, false);
-            }
-        }
-        else
-        {
-            // Only leader of the guild can buy guild house & only if they don't already have a guild house
-            if (player->GetGuild()->GetLeaderGUID() == player->GetGUID())
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Buy Guild House!", GOSSIP_SENDER_MAIN, 2);
-            }
-        }
-
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, 5);
-        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
-        return true;
+        ChatHandler(player->GetSession()).PSendSysMessage("vous n'etes pas membre d'une Guilde.");
+        CloseGossipMenuFor(player);
+        return false;
     }
+
+    LocaleConstant locale = player->GetSession()->GetSessionDbLocaleIndex();
+    GuildHouseLocaleText txt = GetGuildHouseText(locale);
+
+    ClearGossipMenuFor(player);
+    SendGossipMenuFor(player, txt.intro, creature->GetGUID());
+
+    QueryResult has_gh = CharacterDatabase.Query("SELECT id, `guild` FROM `guild_house` WHERE guild = {}", player->GetGuildId());
+
+    if (has_gh)
+    {
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD, txt.tp, GOSSIP_SENDER_MAIN, 1);
+
+        Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId());
+        Guild::Member const* memberMe = guild->GetMember(player->GetGUID());
+        if (memberMe->IsRankNotLower(sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0)))
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_TABARD, txt.sell, GOSSIP_SENDER_MAIN, 3, txt.sell + " ?", 0, false);
+        }
+    }
+    else
+    {
+        if (player->GetGuild()->GetLeaderGUID() == player->GetGUID())
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_TABARD, txt.buy, GOSSIP_SENDER_MAIN, 2);
+        }
+    }
+
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT, txt.close, GOSSIP_SENDER_MAIN, 5);
+    return true;
+}
+
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
