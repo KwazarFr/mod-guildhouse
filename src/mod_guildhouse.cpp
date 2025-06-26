@@ -116,46 +116,6 @@ public:
     }
 };
 
-struct GuildHouseLocaleText
-{
-    std::string intro;
-    std::string tp;
-    std::string buy;
-    std::string sell;
-    std::string close;
-};
-
-static GuildHouseLocaleText GetGuildHouseText(LocaleConstant locale)
-{
-    switch (locale)
-    {
-    case LOCALE_frFR:
-        return {
-            "Bienvenue, noble représentant de guilde !\n\n"
-            "Les Maison de Guilde sont des sanctuaires exclusifs offerts aux guildes les plus déterminées. "
-            "Personnalisables et modulables, elles peuvent accueillir des portails, vendeurs, maîtres de classe, "
-            "et tout ce dont une guilde a besoin pour prospérer.\n\n"
-            "Explorez vos options ci-dessous pour en acquérir une ou gérer celle que vous possédez déjà.",
-            "🏠 Se téléporter à la Maison de Guilde",
-            "🛒 Acheter une Maison de Guilde",
-            "💰 Vendre la Maison de Guilde",
-            "❌ Fermer"
-        };
-    default:
-        return {
-            "Welcome, noble guild representative!\n\n"
-            "Guild Houses are exclusive sanctuaries for the most ambitious guilds. "
-            "Fully customizable, they can host portals, vendors, trainers, and everything your guild needs to thrive.\n\n"
-            "Explore your options below to acquire one or manage your existing Guild House.",
-            "🏠 Teleport to Guild House",
-            "🛒 Buy Guild House",
-            "💰 Sell Guild House",
-            "❌ Close"
-        };
-    }
-}
-
-
 class GuildHouseSeller : public CreatureScript
 {
 
@@ -177,46 +137,70 @@ public:
         return new GuildHouseSellerAI(creature);
     }
 
-bool OnGossipHello(Player* player, Creature* creature) override
-{
-    if (!player->GetGuild())
+    bool OnGossipHello(Player* player, Creature* creature) override
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("vous n'etes pas membre d'une Guilde.");
-        CloseGossipMenuFor(player);
-        return false;
-    }
-
-    LocaleConstant locale = player->GetSession()->GetSessionDbLocaleIndex();
-    GuildHouseLocaleText txt = GetGuildHouseText(locale);
-
-    ClearGossipMenuFor(player);
-    SendGossipMenuFor(player, txt.intro, creature->GetGUID());
-
-    QueryResult has_gh = CharacterDatabase.Query("SELECT id, `guild` FROM `guild_house` WHERE guild = {}", player->GetGuildId());
-
-    if (has_gh)
-    {
-        AddGossipItemFor(player, GOSSIP_ICON_TABARD, txt.tp, GOSSIP_SENDER_MAIN, 1);
-
-        Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId());
-        Guild::Member const* memberMe = guild->GetMember(player->GetGUID());
-        if (memberMe->IsRankNotLower(sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0)))
+        if (!player->GetGuild())
         {
-            AddGossipItemFor(player, GOSSIP_ICON_TABARD, txt.sell, GOSSIP_SENDER_MAIN, 3, txt.sell + " ?", 0, false);
+            ChatHandler(player->GetSession()).PSendSysMessage("You are not a member of a guild.");
+            CloseGossipMenuFor(player);
+            return false;
         }
-    }
-    else
-    {
-        if (player->GetGuild()->GetLeaderGUID() == player->GetGUID())
+
+        std::string intro, tp, buy, sell, close;
+        switch (player->GetSession()->GetSessionDbLocaleIndex())
         {
-            AddGossipItemFor(player, GOSSIP_ICON_TABARD, txt.buy, GOSSIP_SENDER_MAIN, 2);
+            case LOCALE_frFR:
+                
+				intro =	"Bienvenue, noble représentant de guilde !\n\n"
+						"Les Maisons de Guilde sont des sanctuaires exclusifs offerts aux guildes les plus déterminées. "
+						"Personnalisables et modulables, elles peuvent accueillir des portails, vendeurs, maîtres de classe, "
+						"et tout ce dont une guilde a besoin pour prospérer.\n\n"
+						"Explorez vos options ci-dessous pour en acquérir une ou gérer celle que vous possédez déjà.";
+
+                tp = "🏠 Se téléporter à la Maison de Guilde";
+                buy = "🛒 Acheter une Maison de Guilde";
+                sell = "💰 Vendre la Maison de Guilde";
+                close = "❌ Fermer";
+                break;
+            default:
+                intro = "Welcome, noble guild representative!\n\n"
+						"Guild Houses are exclusive sanctuaries for the most ambitious guilds. "
+						"Fully customizable, they can host portals, vendors, trainers, and everything your guild needs to thrive.\n\n"
+						"Explore your options below to acquire one or manage your existing Guild House.";
+                tp = "🏠 Teleport to Guild House";
+                buy = "🛒 Buy Guild House";
+                sell = "💰 Sell Guild House";
+                close = "❌ Close";
+                break;
         }
+
+        ClearGossipMenuFor(player);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, intro, GOSSIP_SENDER_MAIN, 1000);
+
+        QueryResult has_gh = CharacterDatabase.Query("SELECT id, `guild` FROM `guild_house` WHERE guild = {}", player->GetGuildId());
+
+        if (has_gh)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_TABARD, tp, GOSSIP_SENDER_MAIN, 1);
+            Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId());
+            Guild::Member const* memberMe = guild->GetMember(player->GetGUID());
+            if (memberMe->IsRankNotLower(sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0)))
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_TABARD, sell, GOSSIP_SENDER_MAIN, 3, sell + " ?", 0, false);
+            }
+        }
+        else
+        {
+            if (player->GetGuild()->GetLeaderGUID() == player->GetGUID())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_TABARD, buy, GOSSIP_SENDER_MAIN, 2);
+            }
+        }
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, close, GOSSIP_SENDER_MAIN, 5);
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+        return true;
     }
-
-    AddGossipItemFor(player, GOSSIP_ICON_CHAT, txt.close, GOSSIP_SENDER_MAIN, 5);
-    return true;
-}
-
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
