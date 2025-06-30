@@ -15,6 +15,26 @@
 #include "Transport.h"
 #include "Maps/MapMgr.h"
 
+static void GossipSetText(Player* player, std::string message, uint32 textID)
+{
+    WorldPacket data(SMSG_NPC_TEXT_UPDATE, 100);
+    data << textID;
+    for (uint8 i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; ++i)
+    {
+        data << float(0);
+        data << message;
+        data << message;
+        data << uint32(0);
+        data << uint32(0);
+        data << uint32(0);
+        data << uint32(0);
+        data << uint32(0);
+        data << uint32(0);
+        data << uint32(0);
+    }
+    player->GetSession()->SendPacket(&data);
+}
+
 class GuildData : public DataMap::Base
 {
 public:
@@ -137,70 +157,76 @@ public:
         return new GuildHouseSellerAI(creature);
     }
 
-    bool OnGossipHello(Player* player, Creature* creature) override
+bool OnGossipHello(Player* player, Creature* creature) override
+{
+    if (!player->GetGuild())
     {
-        if (!player->GetGuild())
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("You are not a member of a guild.");
-            CloseGossipMenuFor(player);
-            return false;
-        }
-
-        std::string intro, tp, buy, sell, close;
-        switch (player->GetSession()->GetSessionDbLocaleIndex())
-        {
-            case LOCALE_frFR:
-                
-				intro =	"Bienvenue, noble représentant de guilde !\n\n"
-						"Les Maisons de Guilde sont des sanctuaires exclusifs offerts aux guildes les plus déterminées. "
-						"Personnalisables et modulables, elles peuvent accueillir des portails, vendeurs, maîtres de classe, "
-						"et tout ce dont une guilde a besoin pour prospérer.\n\n"
-						"Explorez vos options ci-dessous pour en acquérir une ou gérer celle que vous possédez déjà.";
-
-                tp = "🏠 Se téléporter à la Maison de Guilde";
-                buy = "🛒 Acheter une Maison de Guilde";
-                sell = "💰 Vendre la Maison de Guilde";
-                close = "❌ Fermer";
-                break;
-            default:
-                intro = "Welcome, noble guild representative!\n\n"
-						"Guild Houses are exclusive sanctuaries for the most ambitious guilds. "
-						"Fully customizable, they can host portals, vendors, trainers, and everything your guild needs to thrive.\n\n"
-						"Explore your options below to acquire one or manage your existing Guild House.";
-                tp = "🏠 Teleport to Guild House";
-                buy = "🛒 Buy Guild House";
-                sell = "💰 Sell Guild House";
-                close = "❌ Close";
-                break;
-        }
-
-        ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, intro, GOSSIP_SENDER_MAIN, 1000);
-
-        QueryResult has_gh = CharacterDatabase.Query("SELECT id, `guild` FROM `guild_house` WHERE guild = {}", player->GetGuildId());
-
-        if (has_gh)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_TABARD, tp, GOSSIP_SENDER_MAIN, 1);
-            Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId());
-            Guild::Member const* memberMe = guild->GetMember(player->GetGUID());
-            if (memberMe->IsRankNotLower(sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0)))
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_TABARD, sell, GOSSIP_SENDER_MAIN, 3, sell + " ?", 0, false);
-            }
-        }
-        else
-        {
-            if (player->GetGuild()->GetLeaderGUID() == player->GetGUID())
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_TABARD, buy, GOSSIP_SENDER_MAIN, 2);
-            }
-        }
-
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, close, GOSSIP_SENDER_MAIN, 5);
-        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
-        return true;
+        ChatHandler(player->GetSession()).PSendSysMessage("You are not a member of a guild.");
+        CloseGossipMenuFor(player);
+        return false;
     }
+
+    std::string intro, tp, buy, sell, close;
+    switch (player->GetSession()->GetSessionDbLocaleIndex())
+    {
+        case LOCALE_frFR:
+            intro = "Bienvenue, noble représentant de guilde !\n\n"
+                    "Les Maisons de Guilde sont des sanctuaires exclusifs offerts aux guildes les plus déterminées. "
+                    "Personnalisables et modulables, elles peuvent accueillir des portails, vendeurs, maîtres de classe, "
+                    "et tout ce dont une guilde a besoin pour prospérer.\n\n"
+                    "Explorez vos options ci-dessous pour en acquérir une ou gérer celle que vous possédez déjà.";
+            tp = "Se téléporter à la Maison de Guilde";
+            buy = "Acheter une Maison de Guilde";
+            sell = "Vendre la Maison de Guilde";
+            close = "Fermer";
+            break;
+        default:
+            intro = "Welcome, noble guild representative!\n\n"
+                    "Guild Houses are exclusive sanctuaries for the most ambitious guilds. "
+                    "Fully customizable, they can host portals, vendors, trainers, and everything your guild needs to thrive.\n\n"
+                    "Explore your options below to acquire one or manage your existing Guild House.";
+            tp = "Teleport to Guild House";
+            buy = "Buy Guild House";
+            sell = "Sell Guild House";
+            close = "Close";
+            break;
+    }
+
+    ClearGossipMenuFor(player);
+
+    // ✅ Injecte la bulle d’intro (non cliquable)
+    GossipSetText(player, intro, DEFAULT_GOSSIP_MESSAGE);
+
+    // ✅ Affiche les vraies options
+    QueryResult has_gh = CharacterDatabase.Query("SELECT id, `guild` FROM `guild_house` WHERE guild = {}", player->GetGuildId());
+    if (has_gh)
+    {
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, tp, GOSSIP_SENDER_MAIN, 1);
+
+        Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId());
+        Guild::Member const* memberMe = guild->GetMember(player->GetGUID());
+
+        if (memberMe->IsRankNotLower(sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0)))
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, sell, GOSSIP_SENDER_MAIN, 3, sell + " ?", 0, false);
+        }
+    }
+    else
+    {
+        if (player->GetGuild()->GetLeaderGUID() == player->GetGUID())
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, buy, GOSSIP_SENDER_MAIN, 2);
+        }
+    }
+
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT, close, GOSSIP_SENDER_MAIN, 5);
+
+    // ✅ Affiche le menu avec la bulle d’intro
+    SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+
+    return true;
+}
+
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
@@ -483,7 +509,7 @@ public:
         }
 
         ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "GM Island", GOSSIP_SENDER_MAIN, 100, "Buy Guild House on GM Island?", sConfigMgr->GetOption<int32>("CostGuildHouse", 10000000), false);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM Island", GOSSIP_SENDER_MAIN, 100, "Buy Guild House on GM Island?", sConfigMgr->GetOption<int32>("CostGuildHouse", 10000000), false);
         // Removing this tease for now, as right now the phasing code is specific go GM Island, so it's not a simple thing to add new areas yet.
         // AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ----- More to Come ----", GOSSIP_SENDER_MAIN, 4);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -501,11 +527,11 @@ public:
             if (player->GetGuild()->GetLeaderGUID() == player->GetGUID())
             {
                 // Only leader of the guild can buy / sell guild house
-                AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Buy Guild House!", GOSSIP_SENDER_MAIN, 2);
-                AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Sell Guild House!", GOSSIP_SENDER_MAIN, 3, "Are you sure you want to sell your Guild House?", 0, false);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Buy Guild House!", GOSSIP_SENDER_MAIN, 2);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Sell Guild House!", GOSSIP_SENDER_MAIN, 3, "Are you sure you want to sell your Guild House?", 0, false);
             }
 
-            AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Teleport to Guild House", GOSSIP_SENDER_MAIN, 1);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Teleport to Guild House", GOSSIP_SENDER_MAIN, 1);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, 5);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             ChatHandler(player->GetSession()).PSendSysMessage("Your Guild does not own a Guild House");
